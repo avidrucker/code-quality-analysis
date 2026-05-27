@@ -257,10 +257,16 @@
 (defn- parse-claude-envelope
   "Parse the outer JSON envelope from `claude --output-format json`.
    Returns {:envelope <outer-map>} on success, {:parse-failed? true}
-   otherwise."
+   otherwise. An empty/null stdout (cheshire parses '' to nil rather than
+   throwing) is treated as a parse failure — claude shouldn't return 0
+   with no envelope, and faking an empty {:envelope nil} would mask the
+   problem downstream."
   [raw-stdout]
   (try
-    {:envelope (json/parse-string raw-stdout true)}
+    (let [parsed (json/parse-string raw-stdout true)]
+      (if (nil? parsed)
+        {:parse-failed? true}
+        {:envelope parsed}))
     (catch Exception _ {:parse-failed? true})))
 
 (defn- parse-claude-reply

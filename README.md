@@ -73,11 +73,19 @@ Each check produces a result in `#{:pass :fail :unknown :n/a}` with confidence `
 
 No single composite score. Per-concern verdicts only. `:unknown` is surfaced in its own section of the report.
 
+## Tests
+
+```bash
+./test/assess_test.bb
+```
+
+Unit tests via `clojure.test` cover the predicate DSL (numeric comparator, `check-one-pred`, `pass-when-satisfied?`), the Claude envelope/reply parsers, `claude-error-note`, `expand-tilde`, and `resolve-claude-opts`'s precedence chain. Exits non-zero on any failure.
+
 ## Status
 
-**v1.** Dogfooded against [lccjs](https://github.com/avidrucker/lccjs) (5 deterministic checks + 1 AI-assisted probe over the interpreter hot path). The wiring works end-to-end including the personal-Claude profile (`:claude/config-dir`); the AI check needs a one-time `claude /login` before it can return real ratings.
+**v1.** Dogfooded against [lccjs](https://github.com/avidrucker/lccjs) (5 deterministic checks + 1 AI-assisted probe over the interpreter hot path). The wiring works end-to-end; the AI check needs a one-time `claude /login` for the chosen `:claude/config-dir` profile before it can return real ratings.
 
-Coming next: a test suite for the runner itself, expansion of the lccjs config from 6 to ~15 checks, and CI.
+Coming next: expansion of the lccjs config from 6 to ~15 checks, then CI.
 
 ## License
 
