@@ -147,6 +147,38 @@ That tolerates a vector or keyword as `:pass-when` (because the `(map? pw)` shor
 - Run the same example twice in a row from a clean tree — catches order/flake dependencies.
 - Re-read any documentation samples and ask "is this still true?" — catches drift.
 
+### Finding 7 — First CI run was green, but flagged a time-bomb deprecation
+
+**Context.** Finding 5 predicted "first push will show whether the action versions, the bb install, and the script paths all line up." It did — the run completed in 8 seconds, all seven steps green, 109 test assertions passed. But the run also produced an annotation:
+
+```
+! Node.js 20 actions are deprecated. The following actions are running on Node.js 20:
+  actions/checkout@v4, DeLaGuardo/setup-clojure@13.4
+  Node.js 24 becomes the default on June 2nd, 2026.
+```
+
+The CI works *today*. It would break in ~one week (June 2nd) when Node.js 20 stops being the default on hosted runners.
+
+**Change.** Bumped both pins in `.github/workflows/test.yml`:
+
+- `actions/checkout@v4` → `@v6` (latest stable, January 2026). Major version bump, but our usage is the zero-config default — checkout the repo at the current ref — which is forward-compatible across v4/v5/v6.
+- `DeLaGuardo/setup-clojure@13.4` → `@13.6.1` (latest, May 2026). Minor bump; safe drop-in.
+
+**Decision: pin to specific versions, not floating tags.** A common alternative is `actions/checkout@v6` (a moving major-tag) vs `actions/checkout@v6.0.2` (a frozen SHA-equivalent). I chose the major-tag for `@v6` because:
+- Security: GitHub already warns when a tagged action ref is moved unexpectedly; the additional supply-chain risk of `@v6` vs `@v6.0.2` is small.
+- Maintenance: pinning to a specific minor avoids version churn for trivial patch-level fixes the action author may ship.
+- Auditability: the major-tag is what action documentation shows; matching that makes future debugging easier.
+
+For `setup-clojure` I went with the full `@13.6.1` because the action's release cadence is faster (3 minor versions in 2 months) and pinning to a specific minor reduces the chance of a transient regression sneaking in.
+
+**Surprise.** Pinning a CI action at all is a tradeoff I don't see discussed often. The two failure modes are:
+1. Too loose (`@main`): every push potentially behaves differently as the action evolves.
+2. Too tight (`@v4.1.7`): pins to a specific minor that goes stale, and when the major you're on hits EOL you have to re-evaluate from scratch.
+
+The middle ground (`@v6` major-tag) means trusting the action author to follow semver. For high-traffic actions like `actions/checkout` that's reasonable. For lower-traffic actions, more careful pinning may be warranted.
+
+**Lesson.** First-CI-run produces *two* kinds of signal: did it pass, and what did it warn about? Don't stop reading at the green ✓. The Node.js 20 deprecation was a deadline-driven thing that would have silently caught us in a week; the warning was visible only because GitHub Actions surfaces deprecations as run-level annotations. Worth a Finding-7-style post-mortem habit: after every "first time we did X" event, re-read the output for the warnings hidden under the success.
+
 ---
 
 ## Deferred for v2
