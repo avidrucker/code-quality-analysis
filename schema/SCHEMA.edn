@@ -30,12 +30,23 @@
 
  ;; --- Claude CLI invocation (used by the :ai-assisted runner) ---
  ;;
- ;; If set, the runner exports CLAUDE_CONFIG_DIR=<value> when invoking
- ;; `claude` so subprocess calls use the named profile rather than the
- ;; default ~/.claude/. Mirrors the `personal-claude` shell alias pattern.
- ;; If omitted, the runner inherits any CLAUDE_CONFIG_DIR set by the
- ;; parent shell, or falls back to claude's default.
- :claude/config-dir "~/.claude-personal"
+ ;; All :claude/* keys are OPTIONAL and resolved by precedence (highest
+ ;; wins):
+ ;;
+ ;;   1. This file (project EDN)
+ ;;   2. Process env — only CLAUDE_CONFIG_DIR; the others are EDN-only
+ ;;   3. local.edn (per-machine, gitignored — see local.example.edn)
+ ;;   4. Built-in default
+ ;;
+ ;; Putting these in `local.edn` rather than here keeps the project EDN
+ ;; portable: machine-specific values don't leak into versioned config.
+ ;; Set them in this file only when a specific project requires a fixed
+ ;; profile (rare).
+ ;;
+ ;;   :claude/cmd            "claude"   ; binary name on PATH
+ ;;   :claude/config-dir     <nil>      ; sets CLAUDE_CONFIG_DIR subprocess env
+ ;;   :claude/max-budget-usd 1          ; cap per AI-check invocation
+ ;;   :claude/model          <nil>      ; uses claude's default model
 
  ;; --- Checks ---
  ;;

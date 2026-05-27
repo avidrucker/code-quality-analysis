@@ -5,14 +5,14 @@
 ;;
 ;; Six checks: 5 deterministic + 1 ai-assisted (stub in v1).
 
-{:project/name      "lccjs"
- :project/path      "~/Documents/Study/JavaScript/lccjs"
- :project/profile   :cli-tool
- :reports/dir       "reports/lccjs"
+{:project/name    "lccjs"
+ :project/path    "~/Documents/Study/JavaScript/lccjs"
+ :project/profile :cli-tool
+ :reports/dir     "reports/lccjs"
 
- ;; Use Avi's personal Claude config (mirrors the `personal-claude` shell
- ;; alias). The runner sets CLAUDE_CONFIG_DIR for the subprocess.
- :claude/config-dir "~/.claude-personal"
+ ;; Claude invocation knobs (:claude/config-dir, :claude/cmd, :claude/model,
+ ;; :claude/max-budget-usd) live in local.edn per-machine — not here. See
+ ;; local.example.edn for the template.
 
  :checks
  [{:check/id          :unit-tests-pass

@@ -49,6 +49,28 @@
   (binding [*out* *err*] (println msg))
   (System/exit code))
 
+;; Resolved at script-load time so `local.edn` is found next to assess.bb
+;; regardless of the caller's cwd. Falls back to "." if babashka.file
+;; isn't set (e.g. running inside a REPL).
+(def ^:private script-dir
+  (or (some-> (System/getProperty "babashka.file") fs/absolutize fs/parent str)
+      "."))
+
+(defn- load-local-edn
+  "Read local.edn from the script directory if present. Returns an empty
+   map on missing/invalid file (warns on invalid). local.edn is gitignored
+   per-machine config; see local.example.edn for the template."
+  []
+  (let [path (str script-dir "/local.edn")]
+    (when (fs/exists? path)
+      (try
+        (edn/read-string (slurp path))
+        (catch Exception e
+          (binding [*out* *err*]
+            (println (str "Warning: failed to parse " path ": " (.getMessage e))
+                     "— continuing without local config"))
+          {})))))
+
 ;; ---------------------------------------------------------------------------
 ;; Config loading & validation
 ;; ---------------------------------------------------------------------------
@@ -160,17 +182,37 @@
     :confidence {:type "string" :enum ["high" "medium" "low"]}}
    :required ["rating" "reasoning" "confidence"]})
 
-(defn- claude-available? []
-  (try (boolean (fs/which "claude")) (catch Exception _ false)))
+(defn- claude-available? [cmd]
+  (try (boolean (fs/which cmd)) (catch Exception _ false)))
+
+(defn- resolve-claude-opts
+  "Walk precedence to produce the resolved knobs used when invoking claude.
+   Precedence (highest wins):
+     1. Project EDN (e.g. examples/lccjs.edn)
+     2. Process env (CLAUDE_CONFIG_DIR only — the others are EDN-only)
+     3. local.edn (per-machine)
+     4. Built-in default"
+  [project-cfg local-cfg]
+  (let [cfg-dir (or (:claude/config-dir project-cfg)
+                    (System/getenv "CLAUDE_CONFIG_DIR")
+                    (:claude/config-dir local-cfg))]
+    {:cmd            (or (:claude/cmd project-cfg)
+                         (:claude/cmd local-cfg)
+                         "claude")
+     :config-dir     (some-> cfg-dir expand-tilde)
+     :max-budget-usd (or (:claude/max-budget-usd project-cfg)
+                         (:claude/max-budget-usd local-cfg)
+                         1)
+     :model          (or (:claude/model project-cfg)
+                         (:claude/model local-cfg))}))
 
 (defn- claude-env
-  "Build the env map for invoking claude. Honors :claude/config-dir from
-   the config, falling back to a parent-env CLAUDE_CONFIG_DIR if set."
-  [config]
-  (let [cfg-dir (or (some-> (:claude/config-dir config) expand-tilde)
-                    (System/getenv "CLAUDE_CONFIG_DIR"))]
-    (cond-> {}
-      cfg-dir (assoc "CLAUDE_CONFIG_DIR" cfg-dir))))
+  "Build the subprocess env for invoking claude. Currently only sets
+   CLAUDE_CONFIG_DIR, since that's the one env var the claude binary
+   reads. Everything else is passed as CLI flags."
+  [claude-opts]
+  (cond-> {}
+    (:config-dir claude-opts) (assoc "CLAUDE_CONFIG_DIR" (:config-dir claude-opts))))
 
 (defn- substitute-inputs [tmpl inputs project-root]
   (let [block (str/join
@@ -186,20 +228,24 @@
       (str tmpl "\n\n## Inputs\n\n" block))))
 
 (defn- invoke-claude
-  "Run `claude -p` with strict JSON output and the given env. The prompt
+  "Run claude in -p (print) mode with strict JSON output. Reads :cmd,
+   :max-budget-usd, :model, and :config-dir from claude-opts. The prompt
    is piped via stdin (no argv-size limits, no 'no stdin received'
    warning). Returns a map with either :timeout? true, or
    :exit/:stdout/:stderr."
-  [prompt schema-json env timeout-ms]
-  (let [proc (p/process
-               ["claude" "-p"
-                "--bare"
-                "--no-session-persistence"
-                "--output-format" "json"
-                "--json-schema" schema-json
-                "--tools" ""
-                "--max-budget-usd" "1"]
-               {:in prompt :out :string :err :string :extra-env env})
+  [prompt schema-json claude-opts timeout-ms]
+  (let [{:keys [cmd model max-budget-usd]} claude-opts
+        args (cond-> [cmd "-p"
+                      "--bare"
+                      "--no-session-persistence"
+                      "--output-format" "json"
+                      "--json-schema" schema-json
+                      "--tools" ""
+                      "--max-budget-usd" (str max-budget-usd)]
+               model (into ["--model" model]))
+        env  (claude-env claude-opts)
+        proc (p/process args
+                        {:in prompt :out :string :err :string :extra-env env})
         outcome (deref proc timeout-ms ::timeout)]
     (if (= outcome ::timeout)
       (do (try (.destroy ^Process (:proc proc)) (catch Exception _ nil))
@@ -315,17 +361,17 @@
       (ai-skipped check ctx ev-path
                   (str "Prompt file not found: `" prompt-file "`") started)
 
-      (not (claude-available?))
+      (not (claude-available? (:cmd (:claude-opts ctx))))
       (ai-skipped check ctx ev-path
-                  "`claude` CLI is not on PATH. Install Claude Code to enable AI-assisted checks."
+                  (str "`" (:cmd (:claude-opts ctx)) "` CLI is not on PATH. "
+                       "Install Claude Code (or set :claude/cmd in local.edn) to enable AI-assisted checks.")
                   started)
 
       :else
       (let [tmpl        (slurp prompt-file)
             full-prompt (substitute-inputs tmpl (or inputs []) project-root)
             schema-json (json/generate-string ai-output-schema)
-            env         (claude-env (:config ctx))
-            inv         (invoke-claude full-prompt schema-json env timeout-ms)
+            inv         (invoke-claude full-prompt schema-json (:claude-opts ctx) timeout-ms)
             env-result  (when-not (:timeout? inv) (parse-claude-envelope (:stdout inv)))
             parsed      (parse-claude-reply (:envelope env-result))
             usable?     (and (not (:timeout? inv))
@@ -557,11 +603,15 @@
   (let [{:keys [config reports-dir]} (parse-args args)]
     (when-not config (print-help) (System/exit 2))
     (let [cfg          (validate-config (load-config config))
+          local-cfg    (load-local-edn)
+          claude-opts  (resolve-claude-opts cfg local-cfg)
           started-inst (Instant/now)
           reports-dir  (or reports-dir
                            (:reports/dir cfg)
                            (str "reports/" (:project/name cfg)))
           ctx          {:config          cfg
+                        :local-config    local-cfg
+                        :claude-opts     claude-opts
                         :project-root    (:project/path cfg)
                         :reports-dir     reports-dir
                         :config-path     config

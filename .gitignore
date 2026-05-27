@@ -2,6 +2,9 @@
 # The runner creates the dir on demand; don't track its contents.
 reports/
 
+# Per-machine config overrides. See local.example.edn for the template.
+local.edn
+
 # Stray temp/junk
 *.log
 *.tmp

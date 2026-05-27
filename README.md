@@ -22,6 +22,17 @@ cd code-quality-analysis
 ./assess.bb --help
 ```
 
+## Configuration
+
+Per-machine settings (which Claude config dir to use, model, budget cap) live in a gitignored `local.edn` next to `assess.bb`. To set yours up:
+
+```bash
+cp local.example.edn local.edn
+# edit local.edn — all keys are optional
+```
+
+If `local.edn` is absent the runner uses safe defaults (binary `claude`, default config dir, $1 budget cap per AI check). See `local.example.edn` for the documented template and precedence model.
+
 ## Run
 
 ```bash

@@ -1,0 +1,37 @@
+;; local.example.edn
+;;
+;; Copy this file to `local.edn` (gitignored) and edit values for your
+;; machine. assess.bb auto-loads `local.edn` at startup if it exists.
+;;
+;; All keys are optional. If `local.edn` is absent, the runner uses these
+;; built-in defaults:
+;;
+;;   :claude/cmd            "claude"   ; binary name on PATH
+;;   :claude/config-dir     <nil>      ; uses claude's default ~/.claude/
+;;   :claude/max-budget-usd 1          ; safety cap per AI-check invocation
+;;   :claude/model          <nil>      ; uses claude's default model
+;;
+;; Precedence (highest wins):
+;;
+;;   1. Project EDN (e.g. examples/lccjs.edn)
+;;   2. Process env (for :claude/config-dir only — reads CLAUDE_CONFIG_DIR)
+;;   3. This file (local.edn)
+;;   4. Built-in default above
+
+{;; If you use a non-default Claude Code config directory (e.g. a separate
+ ;; auth profile for personal projects), set it here. The runner exports
+ ;; CLAUDE_CONFIG_DIR=<value> when invoking the claude subprocess.
+ :claude/config-dir "~/.claude-personal"
+
+ ;; Cap per AI-check invocation. Default 1 USD.
+ :claude/max-budget-usd 1
+
+ ;; Uncomment to pin a specific model. Default is whatever your Claude
+ ;; Code config selects.
+ ;; :claude/model "sonnet"
+
+ ;; If your `claude` binary is named differently — a real wrapper script,
+ ;; not a shell alias — override here. Aliases don't survive into
+ ;; subprocesses; only an actual binary on PATH works.
+ ;; :claude/cmd "claude"
+ }
