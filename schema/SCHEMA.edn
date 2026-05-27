@@ -64,6 +64,15 @@
    :check/severity     :required                   ; #{:required :recommended :advisory}
    :check/runner       :deterministic              ; #{:deterministic :ai-assisted :human-rated}
    :check/description  "All unit tests pass."      ; one line; shown in reports
+   :check/rationale    nil                          ; optional multi-line string;
+                                                    ; if present, rendered as a
+                                                    ; blockquote under the check's
+                                                    ; entry in the report's failure
+                                                    ; sections and included at the
+                                                    ; top of the evidence file. Use
+                                                    ; for why/when/for-whom context
+                                                    ; that isn't obvious from the
+                                                    ; check's description alone.
 
    ;; --- :deterministic runner keys ---
    :check/command      "npm test"                  ; shell command; runs via `sh -c`

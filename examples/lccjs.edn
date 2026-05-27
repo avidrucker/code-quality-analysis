@@ -103,6 +103,15 @@
    :check/severity    :advisory
    :check/runner      :deterministic
    :check/description "Node version is pinned via `.nvmrc` or `engines.node` in package.json."
+   :check/rationale   "Why: silent breakage from Node version skew between dev laptop, CI, and production is one of the most common 'works on my machine' failure modes. The cost a pin lowers is the hours spent diagnosing that skew after the fact.
+
+When it matters: multiple developers; any CI runner; code that uses features tied to a Node major (fetch, Array.findLast, top-level await); native-addon deps that ship version-specific prebuilds.
+
+When it's overkill: solo learning projects with no CI and no deploy target — the empirical 'whatever Node I have works' is fine until it isn't.
+
+For whom: `.nvmrc` serves developers using nvm in their terminal (hint, not enforcement). `engines.node` serves npm tooling, CI, and PaaS deployment systems (warning by default, install-failing under engine-strict). Both are usually worth setting; they reach different audiences.
+
+Recommended: exact known-working version in `.nvmrc`, permissive floor (latest active LTS major) in `engines.node`."
    :check/command     "test -f .nvmrc || node -e 'process.exit(require(\"./package.json\").engines && require(\"./package.json\").engines.node ? 0 : 1)'"
    :check/pass-when   {:exit-code 0}}
 
@@ -178,6 +187,9 @@
    :check/severity    :recommended
    :check/runner      :deterministic
    :check/description "No `.skip(`, `xit(`, or `xdescribe(` in test files."
+   :check/rationale   "Why: a skipped test contributes 0 to confidence and 100% to the coverage illusion. The cost it adds is the gap between 'tests pass' and 'tests verify what they claim to.'
+
+Note on false positives in lccjs: this grep flags both true static `test.skip(...)` calls AND conditional skips inside oracle e2e tests where a fixture is missing. The conditional kind is legitimate defensive code, not skipped coverage. If this check fires, inspect the matches before treating them as work — the recommended fix is to whitelist conditional skips or tighten the regex; outright removing them would break the fixture-gated runs."
    :check/command     "! grep -rEn --include='*.js' '\\.skip\\(|\\bxit\\(|\\bxdescribe\\(' tests/ 2>/dev/null"
    :check/pass-when   {:exit-code 0}}
 

@@ -287,6 +287,26 @@ These are externally meaningful outcomes. A system can fail catastrophically on 
 
 **Quantified:** Regression tests catch known seeded breaking changes 99% of the time before they ship to prod.
 
+### Node version pinning (delivery-safety sub-topic)
+
+For Node/JS projects, pinning the Node version is a delivery-safety check worth calling out explicitly. The cost it lowers is "works on my machine" — silent breakage from version skew between dev laptop, CI runner, and production.
+
+Two mechanisms are commonly used together:
+
+- **`.nvmrc`** (one-line text file at repo root, e.g. `24.16.0`) — read by `nvm` when a developer runs `nvm use`. Switches the local shell to the named version. Audience: developers in their terminal. It's a *hint*, not enforcement.
+
+- **`engines.node` in `package.json`** (e.g. `"engines": {"node": ">=18.0.0"}`) — read by npm/yarn at install time and by deployment platforms (Vercel, Heroku, Render, Cloud Run) when choosing a runtime. Produces a warning by default; fails install when `engine-strict=true` is set. Audience: npm tooling, CI, PaaS.
+
+**When does it matter?**
+- Multiple developers, or any CI runner — version skew breaks builds intermittently.
+- Code that uses features which landed in a specific Node major (`fetch`, `Array.findLast`, top-level await, etc.).
+- Native-addon dependencies (`better-sqlite3`, `bcrypt`, `node-canvas`) — version-specific prebuilt binaries that fail to load or fall back to slow source builds on mismatch.
+
+**When is it overkill?**
+- Solo learning projects with no CI and no deploy target — the empirical "whatever Node version I have works" is fine until that's no longer true.
+
+**Recommended values:** put the exact known-working version in `.nvmrc`; put a permissive floor (latest active LTS major or older) in `engines.node`. Different values for the two are not a contradiction — they serve different audiences.
+
 ---
 
 # Second-order code qualities

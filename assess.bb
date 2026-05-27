@@ -325,7 +325,9 @@
                     {:exit-code -1 :stdout "" :stderr (.getMessage e) :error? true}))]
     (write-evidence!
       ev-path
-      (str "$ " command "\n(cwd: " cwd* ")\n"
+      (str (when-let [rat (:check/rationale check)]
+             (str "## Rationale\n\n" rat "\n\n"))
+           "$ " command "\n(cwd: " cwd* ")\n"
            "--- exit: " (:exit-code outcome) " ---\n"
            "--- stdout ---\n" (:stdout outcome)
            "\n--- stderr ---\n" (:stderr outcome) "\n"))
@@ -400,6 +402,8 @@
         (write-evidence!
           ev-path
           (str "# AI-assisted check: " (name id) "\n\n"
+               (when-let [rat (:check/rationale check)]
+                 (str "## Rationale\n\n" rat "\n\n"))
                "- **Status:** " (name status) "\n"
                "- **Confidence:** " (name confidence) "\n"
                "- **Timeout hit:** " (if (:timeout? inv) "yes" "no") "\n"
@@ -465,7 +469,8 @@
 ;; ---------------------------------------------------------------------------
 
 (def ^:private result-keys
-  [:check/id :check/concern :check/level :check/severity :check/runner :check/description])
+  [:check/id :check/concern :check/level :check/severity :check/runner
+   :check/description :check/rationale])
 
 (defn- run-all-checks [config ctx]
   (mapv (fn [check]
@@ -492,6 +497,20 @@
     (some #(= :fail (:result/status %)) rows) "WARN"
     (every? #(= :pass (:result/status %)) rows) "PASS"
     :else "MIXED"))
+
+(defn- render-failure-entry
+  "Render a check failure as a bullet with optional rationale blockquote
+   and evidence path. `bold?` controls visual weight (required failures
+   use bold; recommended and advisory don't)."
+  [r {:keys [bold?]}]
+  (let [prefix (str "[" (name (:check/concern r)) "] " (name (:check/id r)))
+        title  (if bold? (str "**" prefix "**") prefix)]
+    (println (str "- " title " — " (:check/description r)))
+    (when-let [rat (:check/rationale r)]
+      (doseq [line (str/split-lines rat)]
+        (println (str "  > " line))))
+    (when-let [ev (:result/evidence-path r)]
+      (println (str "  - Evidence: `" ev "`")))))
 
 (defn- render-markdown [config results ctx]
   (let [by-concern (sort-by key (group-by :check/concern results))]
@@ -524,12 +543,7 @@
         (when (seq req-fails)
           (println "## Required failures")
           (println)
-          (doseq [r req-fails]
-            (println (str "- **[" (name (:check/concern r)) "] "
-                          (name (:check/id r)) "** — "
-                          (:check/description r)))
-            (when-let [ev (:result/evidence-path r)]
-              (println (str "  - Evidence: `" ev "`"))))
+          (doseq [r req-fails] (render-failure-entry r {:bold? true}))
           (println)))
       ;; Recommended warnings
       (let [warns (filter #(and (= :recommended (:check/severity %))
@@ -537,10 +551,15 @@
         (when (seq warns)
           (println "## Recommended warnings")
           (println)
-          (doseq [r warns]
-            (println (str "- [" (name (:check/concern r)) "] "
-                          (name (:check/id r)) " — "
-                          (:check/description r))))
+          (doseq [r warns] (render-failure-entry r {:bold? false}))
+          (println)))
+      ;; Advisory items (logged only — never gate, but worth seeing)
+      (let [adv (filter #(and (= :advisory (:check/severity %))
+                              (= :fail (:result/status %))) results)]
+        (when (seq adv)
+          (println "## Advisory items")
+          (println)
+          (doseq [r adv] (render-failure-entry r {:bold? false}))
           (println)))
       ;; Unknowns (Casey's rule: surface, do not silently coerce to pass/fail)
       (let [unks (filter #(= :unknown (:result/status %)) results)]
