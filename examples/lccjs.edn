@@ -1,0 +1,72 @@
+;; v1 dogfood configuration for lccjs.
+;; Run from the code-quality-analysis directory:
+;;
+;;   ./assess.bb examples/lccjs.edn
+;;
+;; Six checks: 5 deterministic + 1 ai-assisted (stub in v1).
+
+{:project/name      "lccjs"
+ :project/path      "~/Documents/Study/JavaScript/lccjs"
+ :project/profile   :cli-tool
+ :reports/dir       "reports/lccjs"
+
+ ;; Use Avi's personal Claude config (mirrors the `personal-claude` shell
+ ;; alias). The runner sets CLAUDE_CONFIG_DIR for the subprocess.
+ :claude/config-dir "~/.claude-personal"
+
+ :checks
+ [{:check/id          :unit-tests-pass
+   :check/concern     :correctness
+   :check/level       :first-order
+   :check/severity    :required
+   :check/runner      :deterministic
+   :check/description "`npm test` exits zero."
+   :check/command     "npm test"
+   :check/pass-when   {:exit-code 0}}
+
+  {:check/id          :no-test-only
+   :check/concern     :testability
+   :check/level       :second-order
+   :check/severity    :required
+   :check/runner      :deterministic
+   :check/description "No `.only(` calls left in test files."
+   :check/command     "! grep -rn --include='*.js' '\\.only(' test/ tests/ __tests__/ 2>/dev/null"
+   :check/pass-when   {:exit-code 0}}
+
+  {:check/id          :lockfile-present
+   :check/concern     :delivery-safety
+   :check/level       :first-order
+   :check/severity    :recommended
+   :check/runner      :deterministic
+   :check/description "`package-lock.json` exists at the project root."
+   :check/command     "test -f package-lock.json"
+   :check/pass-when   {:exit-code 0}}
+
+  {:check/id          :assembler-size-bound
+   :check/concern     :maintainability
+   :check/level       :second-order
+   :check/severity    :advisory
+   :check/runner      :deterministic
+   :check/description "`src/core/assembler.js` is under 2500 lines."
+   :check/command     "awk 'END { exit (NR <= 2500 ? 0 : 1) }' src/core/assembler.js"
+   :check/pass-when   {:exit-code 0}}
+
+  {:check/id          :no-fixme-in-hotpath
+   :check/concern     :correctness
+   :check/level       :first-order
+   :check/severity    :advisory
+   :check/runner      :deterministic
+   :check/description "No `FIXME` markers in `src/core/`."
+   :check/command     "! grep -rn 'FIXME' src/core/ 2>/dev/null"
+   :check/pass-when   {:exit-code 0}}
+
+  {:check/id           :interpreter-no-quadratic-hotpath
+   :check/concern      :performance
+   :check/level        :first-order
+   :check/severity     :recommended
+   :check/runner       :ai-assisted
+   :check/description  "Interpreter dispatch loop has no obvious quadratic
+                        behavior in the per-instruction hot path."
+   :check/prompt-file  "prompts/hotpath-review.md"
+   :check/inputs       ["src/core/interpreter.js"]
+   :check/pass-when    {:rating {:>= 4}}}]}

@@ -1,0 +1,8 @@
+# Run outputs — every invocation of assess.bb writes here.
+# The runner creates the dir on demand; don't track its contents.
+reports/
+
+# Stray temp/junk
+*.log
+*.tmp
+.DS_Store

@@ -1,0 +1,132 @@
+;; Code Quality Assessment — Configuration Schema (v1)
+;;
+;; This is a self-documenting reference. Every supported key appears here
+;; with a comment explaining what it does. Copy `examples/lccjs.edn` as a
+;; starting point for a real project, not this file.
+;;
+;; Design intent:
+;;   - Each check declares HOW it should be run (:check/runner) so the
+;;     framework can dispatch deterministic, AI-assisted, and human-rated
+;;     checks through different adapters.
+;;   - Severity (:check/severity) is policy, not a numeric weight:
+;;       :required    -> failure exits non-zero, gates downstream tooling
+;;       :recommended -> failure becomes a warning in the report
+;;       :advisory    -> failure is logged only
+;;   - Status (:result/status) is one of #{:pass :fail :unknown :n/a}.
+;;     :unknown is a first-class value — honest "I don't know" beats a
+;;     fabricated number. (Casey's WARMED bias preserved.)
+
+{;; --- Project metadata ---
+ :project/name    "example-project"          ; required; used in report headers
+ :project/path    "~/path/to/project"        ; absolute, relative, or ~-prefixed;
+                                             ; used as :cwd for shell-runner commands
+ :project/profile :cli-tool                  ; informational; one of:
+                                             ;   :cli-tool :library :web-app
+                                             ;   :mobile-app :backend-service
+                                             ;   :teaching-demo
+
+ ;; --- Where reports go (overridable on the CLI with --reports-dir) ---
+ :reports/dir "reports/example-project"
+
+ ;; --- Claude CLI invocation (used by the :ai-assisted runner) ---
+ ;;
+ ;; If set, the runner exports CLAUDE_CONFIG_DIR=<value> when invoking
+ ;; `claude` so subprocess calls use the named profile rather than the
+ ;; default ~/.claude/. Mirrors the `personal-claude` shell alias pattern.
+ ;; If omitted, the runner inherits any CLAUDE_CONFIG_DIR set by the
+ ;; parent shell, or falls back to claude's default.
+ :claude/config-dir "~/.claude-personal"
+
+ ;; --- Checks ---
+ ;;
+ ;; A check is a data map. The runner dispatches on :check/runner. Every
+ ;; check must have :check/id, :check/runner, :check/concern, :check/level,
+ ;; :check/severity, and :check/description. Runner-specific keys are noted
+ ;; per section below.
+ :checks
+ [;; ========================================================
+  ;; :deterministic — shell command, exit code + output parsed
+  ;; ========================================================
+  {:check/id           :unit-tests-pass            ; required; unique keyword
+   :check/concern      :correctness                ; required; see catalog below
+   :check/level        :first-order                ; #{:first-order :second-order :cross-cutting}
+   :check/severity     :required                   ; #{:required :recommended :advisory}
+   :check/runner       :deterministic              ; #{:deterministic :ai-assisted :human-rated}
+   :check/description  "All unit tests pass."      ; one line; shown in reports
+
+   ;; --- :deterministic runner keys ---
+   :check/command      "npm test"                  ; shell command; runs via `sh -c`
+   :check/cwd          nil                         ; optional override; defaults to :project/path
+   :check/pass-when    {:exit-code 0}              ; predicate; see DSL below
+   :check/evidence-path nil}                       ; optional; defaults to <reports-dir>/<id>.log
+
+  ;; ====== :pass-when predicate DSL (v1) ======
+  ;;
+  ;; The predicate is a map; all keys are AND-combined.
+  ;;
+  ;;   {:exit-code 0}                       exit code equals 0
+  ;;   {:exit-code {:in [0 1]}}             exit code is one of the listed values
+  ;;   {:stdout-matches "regex"}            stdout contains a match
+  ;;   {:stdout-not-matches "FAIL|ERROR"}   stdout does NOT contain a match
+  ;;
+  ;; The DSL is intentionally tiny in v1. Add numeric thresholds, JSON-path
+  ;; extraction, etc. as additive predicates — never break existing configs.
+
+  ;; ========================================================
+  ;; :ai-assisted — prompt + inputs, structured reply parsed
+  ;; ========================================================
+  ;; v1 status: wired. The runner invokes:
+  ;;   claude -p --bare --no-session-persistence
+  ;;          --output-format json --json-schema <schema>
+  ;;          --tools "" --max-budget-usd 1
+  ;;          "<prompt>"
+  ;; with :check/prompt-file as the template (with `{{inputs}}` replaced
+  ;; by the concatenated input files) and parses the JSON reply against
+  ;; the hardcoded schema {rating 1..5, reasoning, evidence[], confidence}.
+  ;;
+  ;; If `claude` is not on PATH or the prompt-file is missing, the runner
+  ;; returns :unknown / :low — no fake numbers leak.
+  {:check/id           :interpreter-no-quadratic-hotpath
+   :check/concern      :performance
+   :check/level        :first-order
+   :check/severity     :recommended
+   :check/runner       :ai-assisted
+   :check/description  "Interpreter dispatch loop has no obvious quadratic
+                        behavior in the per-instruction hot path."
+
+   ;; --- :ai-assisted runner keys ---
+   :check/prompt-file  "prompts/hotpath-review.md"  ; template; {{inputs}} is
+                                                    ; replaced with input contents
+   :check/inputs       ["src/core/interpreter.js"]  ; paths relative to :project/path
+   :check/pass-when    {:rating {:>= 4}}            ; predicate against parsed reply
+   :check/timeout-ms   180000                       ; optional; default 180000
+   :check/evidence-path nil}                        ; optional
+
+  ;; ========================================================
+  ;; :human-rated — sign-off file existence + freshness
+  ;; ========================================================
+  ;; v1 status: implemented as a file-presence check. :pass iff the file
+  ;; exists and (if :check/max-age-days is given) was modified within that
+  ;; window. Confidence is :medium when the file exists, :low otherwise.
+  {:check/id           :rollback-procedure-tested
+   :check/concern      :delivery-safety
+   :check/level        :first-order
+   :check/severity     :advisory
+   :check/runner       :human-rated
+   :check/description  "Rollback procedure was exercised in staging
+                        within the last quarter."
+
+   ;; --- :human-rated runner keys ---
+   :check/sign-off-path "docs/signoffs/rollback.md"  ; relative to :project/path
+   :check/max-age-days  90}]                         ; optional; omit for "ever exists"
+
+ ;; --- Concern catalog (v1) ---
+ ;;
+ ;; First-order:    :correctness :performance :delivery-safety
+ ;; Second-order:   :readability :maintainability :testability
+ ;; Cross-cutting:  (none yet — add :logging :error-handling :dependencies
+ ;;                  as the framework grows)
+ ;;
+ ;; Add new concerns by listing them here; the runner does not enforce a
+ ;; closed set in v1 — reports just group by whatever value appears.
+ }
