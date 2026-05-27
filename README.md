@@ -45,6 +45,38 @@ Outputs:
 - `reports/<project>/results.json` — machine-readable, full data
 - `reports/<project>/<check-id>.log` (or `.md`) — per-check evidence
 
+## What the output looks like
+
+A run against the bundled lccjs config produces a scorecard like this (excerpted):
+
+```markdown
+## Summary
+
+| Concern         | Level        | Pass | Fail | Unknown | Verdict |
+|-----------------|--------------|------|------|---------|---------|
+| correctness     | first-order  | 4    | 0    | 0       | PASS    |
+| delivery-safety | first-order  | 3    | 0    | 0       | PASS    |
+| maintainability | second-order | 3    | 0    | 0       | PASS    |
+| performance     | first-order  | 1    | 0    | 1       | MIXED   |
+| readability     | second-order | 2    | 0    | 0       | PASS    |
+| testability     | second-order | 2    | 1    | 0       | WARN    |
+
+## Recommended warnings
+
+- [testability] no-skipped-tests — No `.skip(`, `xit(`, or `xdescribe(` in test files.
+  > Why: a skipped test contributes 0 to confidence and 100% to the coverage illusion.
+  > The cost it adds is the gap between 'tests pass' and 'tests verify what they claim to.'
+  - Evidence: `reports/lccjs/no-skipped-tests.log`
+
+## Unknown (no fake numbers)
+
+- [performance] interpreter-no-quadratic-hotpath — claude reported error: Not logged in · Please run /login
+```
+
+Notice: `:unknown` is its own section, not coerced into pass or fail. Failed checks carry their rationale (the `:check/rationale` field rendered as a blockquote) so the reader knows *why* the check matters. Per-concern verdicts replace any single composite score — that's by design.
+
+*(Sample is representative, not deterministic. Specific Pass/Fail counts can vary across runs — e.g. an upstream test suite that's occasionally flaky will sometimes flip a check between PASS and FAIL.)*
+
 Exit codes:
 
 | Code | Meaning |

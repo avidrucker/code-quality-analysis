@@ -1,0 +1,27 @@
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  bb-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Babashka
+        uses: DeLaGuardo/setup-clojure@13.4
+        with:
+          bb: latest
+
+      - name: Confirm bb is on PATH
+        run: bb --version
+
+      - name: Smoke-test runner loads
+        run: ./assess.bb --help
+
+      - name: Run unit tests
+        run: ./test/assess_test.bb

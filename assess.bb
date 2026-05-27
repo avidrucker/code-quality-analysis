@@ -83,7 +83,18 @@
     (catch Exception e
       (die! 2 (str "Error: failed to parse " path ": " (.getMessage e))))))
 
-(defn- validate-config [config]
+(defn- pass-when-valid?
+  "A :check/pass-when must be a non-empty map. Catches typos like writing
+   a vector or a keyword by mistake — those crash the predicate evaluator
+   at runtime with confusing errors."
+  [pw]
+  (and (map? pw) (seq pw)))
+
+(defn- collect-config-errors
+  "Pure function: returns a vector of validation error strings for the
+   given config (empty vector if valid). Separated from validate-config
+   so it can be unit-tested without going through System/exit."
+  [config]
   (let [errs (volatile! [])]
     (when-not (:project/name config)
       (vswap! errs conj "missing :project/name"))
@@ -96,10 +107,39 @@
         (when-not (supported-runners (:check/runner c))
           (vswap! errs conj (str pfx ": :check/runner must be one of " supported-runners)))
         (when-not (supported-severities (:check/severity c))
-          (vswap! errs conj (str pfx ": :check/severity must be one of " supported-severities)))))
-    (when (seq @errs)
+          (vswap! errs conj (str pfx ": :check/severity must be one of " supported-severities)))
+        ;; Runner-specific required keys. Catching these at config-load
+        ;; time produces an actionable error; otherwise the runner would
+        ;; crash with NullPointerException or silently produce :fail.
+        (case (:check/runner c)
+          :deterministic
+          (do (when-not (string? (:check/command c))
+                (vswap! errs conj (str pfx ": :deterministic check needs a string :check/command")))
+              (when-not (pass-when-valid? (:check/pass-when c))
+                (vswap! errs conj (str pfx ": :deterministic check needs a non-empty map :check/pass-when"))))
+
+          :ai-assisted
+          (do (when-not (string? (:check/prompt-file c))
+                (vswap! errs conj (str pfx ": :ai-assisted check needs a string :check/prompt-file")))
+              (when-not (pass-when-valid? (:check/pass-when c))
+                (vswap! errs conj (str pfx ": :ai-assisted check needs a non-empty map :check/pass-when"))))
+
+          :human-rated
+          (when-not (string? (:check/sign-off-path c))
+            (vswap! errs conj (str pfx ": :human-rated check needs a string :check/sign-off-path")))
+
+          ;; Unknown runner — already flagged above. Skip runner-specific checks.
+          nil)))
+    @errs))
+
+(defn- validate-config
+  "Orchestrator: collects errors and either dies with exit 2 or returns
+   the config unchanged."
+  [config]
+  (let [errs (collect-config-errors config)]
+    (when (seq errs)
       (die! 2 (str "Config validation errors:\n  - "
-                   (str/join "\n  - " @errs))))
+                   (str/join "\n  - " errs))))
     config))
 
 ;; ---------------------------------------------------------------------------
@@ -477,9 +517,14 @@
           (merge (select-keys check result-keys) (run-check check ctx)))
         (:checks config)))
 
-(defn- compute-exit-code [results]
+(defn- compute-exit-code
+  "Exit 1 if any :required check returned :fail OR :unknown. A required
+   check that can't even be measured fails closed — silently passing on
+   :unknown would mask configuration issues (missing tool, no network,
+   bad credentials) that callers need to see."
+  [results]
   (if (some (fn [r] (and (= :required (:check/severity r))
-                         (= :fail (:result/status r))))
+                         (#{:fail :unknown} (:result/status r))))
             results)
     1 0))
 

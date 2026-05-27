@@ -28,6 +28,9 @@
 (def parse-claude-reply    @#'assess/parse-claude-reply)
 (def claude-error-note     @#'assess/claude-error-note)
 (def resolve-claude-opts   @#'assess/resolve-claude-opts)
+(def compute-exit-code     @#'assess/compute-exit-code)
+(def collect-config-errors @#'assess/collect-config-errors)
+(def pass-when-valid?      @#'assess/pass-when-valid?)
 
 ;; ---------------------------------------------------------------------------
 ;; numeric-pred-pass?
@@ -269,6 +272,163 @@
                  {:claude/config-dir "/explicit/project/path"}
                  {:claude/config-dir "/local/path"})]
       (is (= "/explicit/project/path" (:config-dir opts))))))
+
+;; ---------------------------------------------------------------------------
+;; compute-exit-code
+;; ---------------------------------------------------------------------------
+
+(deftest compute-exit-code-test
+  (testing "empty results: exit 0"
+    (is (= 0 (compute-exit-code []))))
+
+  (testing "all :required passing: exit 0"
+    (is (= 0 (compute-exit-code
+               [{:check/severity :required :result/status :pass}
+                {:check/severity :required :result/status :pass}]))))
+
+  (testing "any :required :fail: exit 1"
+    (is (= 1 (compute-exit-code
+               [{:check/severity :required :result/status :pass}
+                {:check/severity :required :result/status :fail}]))))
+
+  (testing "any :required :unknown: exit 1 (fail closed)"
+    (is (= 1 (compute-exit-code
+               [{:check/severity :required :result/status :pass}
+                {:check/severity :required :result/status :unknown}]))))
+
+  (testing ":recommended / :advisory failures do NOT gate exit"
+    (is (= 0 (compute-exit-code
+               [{:check/severity :required    :result/status :pass}
+                {:check/severity :recommended :result/status :fail}
+                {:check/severity :advisory    :result/status :fail}
+                {:check/severity :recommended :result/status :unknown}]))))
+
+  (testing ":n/a on a :required check is treated as not-gating"
+    (is (= 0 (compute-exit-code
+               [{:check/severity :required :result/status :n/a}])))))
+
+;; ---------------------------------------------------------------------------
+;; pass-when-valid?
+;; ---------------------------------------------------------------------------
+
+(deftest pass-when-valid?-test
+  (testing "non-empty map is valid"
+    (is (pass-when-valid? {:exit-code 0}))
+    (is (pass-when-valid? {:rating {:>= 4} :confidence "high"})))
+
+  (testing "nil, empty map, non-map are all invalid"
+    (is (not (pass-when-valid? nil)))
+    (is (not (pass-when-valid? {})))
+    (is (not (pass-when-valid? [:exit-code 0])))
+    (is (not (pass-when-valid? :exit-code)))
+    (is (not (pass-when-valid? "0")))))
+
+;; ---------------------------------------------------------------------------
+;; collect-config-errors
+;; ---------------------------------------------------------------------------
+
+(defn- valid-deterministic [overrides]
+  (merge {:check/id        :test-check
+          :check/runner    :deterministic
+          :check/severity  :advisory
+          :check/command   "true"
+          :check/pass-when {:exit-code 0}}
+         overrides))
+
+(deftest collect-config-errors-test
+  (testing "valid minimal config returns empty error vector"
+    (is (= [] (collect-config-errors
+                {:project/name "p" :checks [(valid-deterministic {})]}))))
+
+  (testing "missing :project/name"
+    (let [errs (collect-config-errors {:checks []})]
+      (is (some #(re-find #":project/name" %) errs))))
+
+  (testing ":checks must be a vector"
+    (let [errs (collect-config-errors {:project/name "p" :checks {}})]
+      (is (some #(re-find #":checks to be a vector" %) errs))))
+
+  (testing "missing :check/id"
+    (let [errs (collect-config-errors
+                 {:project/name "p"
+                  :checks [(dissoc (valid-deterministic {}) :check/id)]})]
+      (is (some #(re-find #"missing :check/id" %) errs))))
+
+  (testing "unsupported :check/runner"
+    (let [errs (collect-config-errors
+                 {:project/name "p"
+                  :checks [(valid-deterministic {:check/runner :bogus})]})]
+      (is (some #(re-find #":check/runner must be one of" %) errs))))
+
+  (testing "unsupported :check/severity"
+    (let [errs (collect-config-errors
+                 {:project/name "p"
+                  :checks [(valid-deterministic {:check/severity :critical})]})]
+      (is (some #(re-find #":check/severity must be one of" %) errs))))
+
+  (testing ":deterministic check missing :command"
+    (let [errs (collect-config-errors
+                 {:project/name "p"
+                  :checks [(dissoc (valid-deterministic {}) :check/command)]})]
+      (is (some #(re-find #":deterministic check needs a string :check/command" %) errs))))
+
+  (testing ":deterministic check missing :pass-when"
+    (let [errs (collect-config-errors
+                 {:project/name "p"
+                  :checks [(dissoc (valid-deterministic {}) :check/pass-when)]})]
+      (is (some #(re-find #":deterministic check needs a non-empty map :check/pass-when" %) errs))))
+
+  (testing ":deterministic check with non-map :pass-when (the crash that triggered this)"
+    (let [errs (collect-config-errors
+                 {:project/name "p"
+                  :checks [(valid-deterministic {:check/pass-when [:not-a-map]})]})]
+      (is (some #(re-find #":deterministic check needs a non-empty map :check/pass-when" %) errs))))
+
+  (testing ":deterministic check with empty-map :pass-when"
+    (let [errs (collect-config-errors
+                 {:project/name "p"
+                  :checks [(valid-deterministic {:check/pass-when {}})]})]
+      (is (some #(re-find #":deterministic check needs a non-empty map :check/pass-when" %) errs))))
+
+  (testing ":ai-assisted check missing :prompt-file (NPE before this fix)"
+    (let [errs (collect-config-errors
+                 {:project/name "p"
+                  :checks [{:check/id :ai :check/runner :ai-assisted
+                            :check/severity :advisory
+                            :check/pass-when {:rating {:>= 4}}}]})]
+      (is (some #(re-find #":ai-assisted check needs a string :check/prompt-file" %) errs))))
+
+  (testing ":ai-assisted check missing :pass-when"
+    (let [errs (collect-config-errors
+                 {:project/name "p"
+                  :checks [{:check/id :ai :check/runner :ai-assisted
+                            :check/severity :advisory
+                            :check/prompt-file "p.md"}]})]
+      (is (some #(re-find #":ai-assisted check needs a non-empty map :check/pass-when" %) errs))))
+
+  (testing ":human-rated check missing :sign-off-path"
+    (let [errs (collect-config-errors
+                 {:project/name "p"
+                  :checks [{:check/id :hr :check/runner :human-rated
+                            :check/severity :advisory}]})]
+      (is (some #(re-find #":human-rated check needs a string :check/sign-off-path" %) errs))))
+
+  (testing "valid :ai-assisted and :human-rated checks produce no errors"
+    (is (= [] (collect-config-errors
+                {:project/name "p"
+                 :checks [{:check/id :ai :check/runner :ai-assisted
+                           :check/severity :advisory
+                           :check/prompt-file "p.md"
+                           :check/pass-when {:rating {:>= 4}}}
+                          {:check/id :hr :check/runner :human-rated
+                           :check/severity :advisory
+                           :check/sign-off-path "signoff.md"}]}))))
+
+  (testing "multiple errors are all collected, not just the first"
+    (let [errs (collect-config-errors
+                 {:checks [(dissoc (valid-deterministic {}) :check/id :check/command :check/pass-when)]})]
+      ;; Expect: missing :project/name, missing :check/id, missing :command, missing :pass-when
+      (is (>= (count errs) 4)))))
 
 ;; ---------------------------------------------------------------------------
 ;; entry point
