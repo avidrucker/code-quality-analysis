@@ -3,52 +3,26 @@
 ;;
 ;;   ./assess.bb examples/lccjs.edn
 ;;
-;; Six checks: 5 deterministic + 1 ai-assisted (stub in v1).
+;; 16 checks total, grouped by concern. Per-machine Claude knobs live in
+;; local.edn (see local.example.edn).
 
 {:project/name    "lccjs"
  :project/path    "~/Documents/Study/JavaScript/lccjs"
  :project/profile :cli-tool
  :reports/dir     "reports/lccjs"
 
- ;; Claude invocation knobs (:claude/config-dir, :claude/cmd, :claude/model,
- ;; :claude/max-budget-usd) live in local.edn per-machine — not here. See
- ;; local.example.edn for the template.
-
  :checks
- [{:check/id          :unit-tests-pass
+ [;; ============================================================
+  ;; Correctness — first-order
+  ;; ============================================================
+
+  {:check/id          :unit-tests-pass
    :check/concern     :correctness
    :check/level       :first-order
    :check/severity    :required
    :check/runner      :deterministic
    :check/description "`npm test` exits zero."
    :check/command     "npm test"
-   :check/pass-when   {:exit-code 0}}
-
-  {:check/id          :no-test-only
-   :check/concern     :testability
-   :check/level       :second-order
-   :check/severity    :required
-   :check/runner      :deterministic
-   :check/description "No `.only(` calls left in test files."
-   :check/command     "! grep -rn --include='*.js' '\\.only(' test/ tests/ __tests__/ 2>/dev/null"
-   :check/pass-when   {:exit-code 0}}
-
-  {:check/id          :lockfile-present
-   :check/concern     :delivery-safety
-   :check/level       :first-order
-   :check/severity    :recommended
-   :check/runner      :deterministic
-   :check/description "`package-lock.json` exists at the project root."
-   :check/command     "test -f package-lock.json"
-   :check/pass-when   {:exit-code 0}}
-
-  {:check/id          :assembler-size-bound
-   :check/concern     :maintainability
-   :check/level       :second-order
-   :check/severity    :advisory
-   :check/runner      :deterministic
-   :check/description "`src/core/assembler.js` is under 2500 lines."
-   :check/command     "awk 'END { exit (NR <= 2500 ? 0 : 1) }' src/core/assembler.js"
    :check/pass-when   {:exit-code 0}}
 
   {:check/id          :no-fixme-in-hotpath
@@ -60,13 +34,158 @@
    :check/command     "! grep -rn 'FIXME' src/core/ 2>/dev/null"
    :check/pass-when   {:exit-code 0}}
 
+  {:check/id          :no-todo-in-hotpath
+   :check/concern     :correctness
+   :check/level       :first-order
+   :check/severity    :advisory
+   :check/runner      :deterministic
+   :check/description "No `TODO` markers in `src/core/`."
+   :check/command     "! grep -rEn 'TODO' src/core/ 2>/dev/null"
+   :check/pass-when   {:exit-code 0}}
+
+  {:check/id          :golden-fixtures-exist
+   :check/concern     :correctness
+   :check/level       :first-order
+   :check/severity    :advisory
+   :check/runner      :deterministic
+   :check/description "Golden fixture directories exist for assembler + interpreter."
+   :check/command     "test -d tests/goldens/assembler && test -d tests/goldens/interpreter"
+   :check/pass-when   {:exit-code 0}}
+
+  ;; ============================================================
+  ;; Performance — first-order
+  ;; ============================================================
+
+  {:check/id          :test-suite-time-bound
+   :check/concern     :performance
+   :check/level       :first-order
+   :check/severity    :advisory
+   :check/runner      :deterministic
+   :check/description "`npm test` completes within 30 seconds."
+   :check/command     "timeout 30 npm test"
+   :check/pass-when   {:exit-code 0}}
+
   {:check/id           :interpreter-no-quadratic-hotpath
    :check/concern      :performance
    :check/level        :first-order
    :check/severity     :recommended
    :check/runner       :ai-assisted
-   :check/description  "Interpreter dispatch loop has no obvious quadratic
-                        behavior in the per-instruction hot path."
+   :check/description  "Interpreter dispatch loop has no obvious quadratic behavior in the per-instruction hot path."
    :check/prompt-file  "prompts/hotpath-review.md"
    :check/inputs       ["src/core/interpreter.js"]
-   :check/pass-when    {:rating {:>= 4}}}]}
+   :check/pass-when    {:rating {:>= 4}}}
+
+  ;; ============================================================
+  ;; Delivery safety — first-order
+  ;; ============================================================
+
+  {:check/id          :lockfile-present
+   :check/concern     :delivery-safety
+   :check/level       :first-order
+   :check/severity    :recommended
+   :check/runner      :deterministic
+   :check/description "`package-lock.json` exists at the project root."
+   :check/command     "test -f package-lock.json"
+   :check/pass-when   {:exit-code 0}}
+
+  {:check/id          :no-uncommitted-changes
+   :check/concern     :delivery-safety
+   :check/level       :first-order
+   :check/severity    :advisory
+   :check/runner      :deterministic
+   :check/description "Working tree is clean (no uncommitted changes vs HEAD)."
+   :check/command     "git diff --quiet HEAD"
+   :check/pass-when   {:exit-code 0}}
+
+  {:check/id          :node-version-pinned
+   :check/concern     :delivery-safety
+   :check/level       :first-order
+   :check/severity    :advisory
+   :check/runner      :deterministic
+   :check/description "Node version is pinned via `.nvmrc` or `engines.node` in package.json."
+   :check/command     "test -f .nvmrc || node -e 'process.exit(require(\"./package.json\").engines && require(\"./package.json\").engines.node ? 0 : 1)'"
+   :check/pass-when   {:exit-code 0}}
+
+  ;; ============================================================
+  ;; Readability — second-order
+  ;; ============================================================
+
+  {:check/id          :no-deep-nesting-in-hotpath
+   :check/concern     :readability
+   :check/level       :second-order
+   :check/severity    :advisory
+   :check/runner      :deterministic
+   :check/description "No lines in `src/core/` indented 20+ spaces (≈5+ levels at 4-space indent)."
+   :check/command     "! grep -rE '^( {20,})[^ ]' src/core/ 2>/dev/null"
+   :check/pass-when   {:exit-code 0}}
+
+  {:check/id          :no-banned-vague-fn-names
+   :check/concern     :readability
+   :check/level       :second-order
+   :check/severity    :advisory
+   :check/runner      :deterministic
+   :check/description "No functions named with vague terms (data, info, thing, stuff, handle, process) in `src/`."
+   :check/command     "! grep -rEn 'function (data|info|thing|stuff|handle|process)\\(' src/ 2>/dev/null"
+   :check/pass-when   {:exit-code 0}}
+
+  ;; ============================================================
+  ;; Maintainability — second-order
+  ;; ============================================================
+
+  {:check/id          :assembler-size-bound
+   :check/concern     :maintainability
+   :check/level       :second-order
+   :check/severity    :advisory
+   :check/runner      :deterministic
+   :check/description "`src/core/assembler.js` is under 2500 lines."
+   :check/command     "awk 'END { exit (NR <= 2500 ? 0 : 1) }' src/core/assembler.js"
+   :check/pass-when   {:exit-code 0}}
+
+  {:check/id          :interpreter-size-bound
+   :check/concern     :maintainability
+   :check/level       :second-order
+   :check/severity    :advisory
+   :check/runner      :deterministic
+   :check/description "`src/core/interpreter.js` is under 2500 lines."
+   :check/command     "awk 'END { exit (NR <= 2500 ? 0 : 1) }' src/core/interpreter.js"
+   :check/pass-when   {:exit-code 0}}
+
+  {:check/id          :few-runtime-dependencies
+   :check/concern     :maintainability
+   :check/level       :second-order
+   :check/severity    :advisory
+   :check/runner      :deterministic
+   :check/description "Runtime dependency count is ≤ 10."
+   :check/command     "node -e 'process.exit(Object.keys(require(\"./package.json\").dependencies || {}).length <= 10 ? 0 : 1)'"
+   :check/pass-when   {:exit-code 0}}
+
+  ;; ============================================================
+  ;; Testability — second-order
+  ;; ============================================================
+
+  {:check/id          :no-test-only
+   :check/concern     :testability
+   :check/level       :second-order
+   :check/severity    :required
+   :check/runner      :deterministic
+   :check/description "No `.only(` calls left in test files."
+   :check/command     "! grep -rn --include='*.js' '\\.only(' test/ tests/ __tests__/ 2>/dev/null"
+   :check/pass-when   {:exit-code 0}}
+
+  {:check/id          :no-skipped-tests
+   :check/concern     :testability
+   :check/level       :second-order
+   :check/severity    :recommended
+   :check/runner      :deterministic
+   :check/description "No `.skip(`, `xit(`, or `xdescribe(` in test files."
+   :check/command     "! grep -rEn --include='*.js' '\\.skip\\(|\\bxit\\(|\\bxdescribe\\(' tests/ 2>/dev/null"
+   :check/pass-when   {:exit-code 0}}
+
+  {:check/id          :tests-not-empty
+   :check/concern     :testability
+   :check/level       :second-order
+   :check/severity    :recommended
+   :check/runner      :deterministic
+   :check/description "At least 5 jest-discoverable test files exist under `tests/new/` (any of *.test.js, *.spec.js)."
+   :check/command     "test $(find tests/new -type f -name '*.js' 2>/dev/null | grep -E '(test|spec)\\.js$' | wc -l) -ge 5"
+   :check/pass-when   {:exit-code 0}}]}
