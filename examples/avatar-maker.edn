@@ -1,0 +1,186 @@
+;; Assessment config for the avatar-maker ClojureScript project.
+;; Run from the code-quality-analysis directory:
+;;
+;;   ./assess.bb examples/avatar-maker.edn
+;;
+;; Read-only on the target: this config performs zero modifications to
+;; the avatar-maker repo. See docs/research/findings.md (Finding A) for
+;; the policy. Failed checks stay as honest signals in our reports,
+;; never auto-fixed.
+
+{:project/name    "avatar-maker"
+ :project/path    "~/Documents/Study/ClojureScript/avatar-maker"
+ :project/profile :web-app
+ :reports/dir     "reports/avatar-maker"
+
+ :checks
+ [;; ============================================================
+  ;; Correctness — first-order
+  ;; ============================================================
+
+  {:check/id          :unit-tests-pass
+   :check/concern     :correctness
+   :check/level       :first-order
+   :check/severity    :required
+   :check/runner      :deterministic
+   :check/description "`npm test` exits zero (compiles + runs node-test build)."
+   :check/command     "npm test"
+   :check/pass-when   {:exit-code 0}}
+
+  {:check/id          :no-fixme-in-src
+   :check/concern     :correctness
+   :check/level       :first-order
+   :check/severity    :advisory
+   :check/runner      :deterministic
+   :check/description "No `FIXME` markers in `src/avatar/`."
+   :check/command     "! grep -rEn 'FIXME' src/avatar/ 2>/dev/null"
+   :check/pass-when   {:exit-code 0}}
+
+  {:check/id          :no-todo-in-src
+   :check/concern     :correctness
+   :check/level       :first-order
+   :check/severity    :advisory
+   :check/runner      :deterministic
+   :check/description "No `TODO` markers in `src/avatar/`."
+   :check/command     "! grep -rEn 'TODO' src/avatar/ 2>/dev/null"
+   :check/pass-when   {:exit-code 0}}
+
+  ;; ============================================================
+  ;; Delivery safety — first-order
+  ;; ============================================================
+
+  {:check/id          :lockfile-present
+   :check/concern     :delivery-safety
+   :check/level       :first-order
+   :check/severity    :recommended
+   :check/runner      :deterministic
+   :check/description "`package-lock.json` exists at the project root."
+   :check/command     "test -f package-lock.json"
+   :check/pass-when   {:exit-code 0}}
+
+  {:check/id          :shadow-cljs-config-present
+   :check/concern     :delivery-safety
+   :check/level       :first-order
+   :check/severity    :recommended
+   :check/runner      :deterministic
+   :check/description "`shadow-cljs.edn` exists at the project root."
+   :check/command     "test -f shadow-cljs.edn"
+   :check/pass-when   {:exit-code 0}}
+
+  {:check/id          :ci-workflow-present
+   :check/concern     :delivery-safety
+   :check/level       :first-order
+   :check/severity    :recommended
+   :check/runner      :deterministic
+   :check/description "`.github/workflows/` has at least one workflow file."
+   :check/command     "test -d .github/workflows && test \"$(ls .github/workflows 2>/dev/null | wc -l)\" -gt 0"
+   :check/pass-when   {:exit-code 0}}
+
+  {:check/id          :no-uncommitted-changes
+   :check/concern     :delivery-safety
+   :check/level       :first-order
+   :check/severity    :advisory
+   :check/runner      :deterministic
+   :check/description "Working tree is clean (no uncommitted changes vs HEAD)."
+   :check/command     "git diff --quiet HEAD"
+   :check/pass-when   {:exit-code 0}}
+
+  {:check/id          :node-version-pinned
+   :check/concern     :delivery-safety
+   :check/level       :first-order
+   :check/severity    :advisory
+   :check/runner      :deterministic
+   :check/description "Node version is pinned via `.nvmrc` or `engines.node` in package.json."
+   :check/rationale   "Why: silent breakage from Node version skew between dev laptop, CI, and production is one of the most common 'works on my machine' failure modes. The cost a pin lowers is the hours spent diagnosing that skew after the fact.
+
+When it matters: multiple developers; any CI runner; code that uses features tied to a Node major (fetch, Array.findLast, top-level await); native-addon deps that ship version-specific prebuilds.
+
+When it's overkill: solo learning projects with no CI and no deploy target. avatar-maker has a `.github/workflows/pages.yml` CI workflow, so a pin would actually matter here — but adding one is a deliberate decision, not something the framework should automate. See docs/research/findings.md Finding A."
+   :check/command     "test -f .nvmrc || node -e 'process.exit(require(\"./package.json\").engines && require(\"./package.json\").engines.node ? 0 : 1)'"
+   :check/pass-when   {:exit-code 0}}
+
+  ;; ============================================================
+  ;; Readability — second-order
+  ;; ============================================================
+
+  ;; Clojure idiomatically uses 2-space indent. 16 spaces ≈ 8 levels of
+  ;; nesting — past that, you're usually in let-bomb or deeply-nested
+  ;; macro territory. JS configs use 20+ spaces for an equivalent threshold
+  ;; (5 levels at 4-space). The threshold is stack-specific; this is one
+  ;; of the per-stack adaptation points called out in docs/research/findings.md.
+  {:check/id          :no-deep-nesting-in-src
+   :check/concern     :readability
+   :check/level       :second-order
+   :check/severity    :advisory
+   :check/runner      :deterministic
+   :check/description "No lines in `src/avatar/` indented 16+ spaces (≈8+ levels at 2-space indent)."
+   :check/command     "! grep -rE '^( {16,})[^ ]' src/avatar/ 2>/dev/null"
+   :check/pass-when   {:exit-code 0}}
+
+  {:check/id          :no-banned-vague-fn-names
+   :check/concern     :readability
+   :check/level       :second-order
+   :check/severity    :advisory
+   :check/runner      :deterministic
+   :check/description "No `defn` with vague names (data, info, thing, stuff, handle, process, do-thing, do-stuff) in `src/`."
+   :check/command     "! grep -rEn '\\(defn-? (data|info|thing|stuff|handle|process|do-thing|do-stuff)[ \\t\\n]' src/ 2>/dev/null"
+   :check/pass-when   {:exit-code 0}}
+
+  ;; ============================================================
+  ;; Maintainability — second-order
+  ;; ============================================================
+
+  {:check/id          :max-src-file-loc-bound
+   :check/concern     :maintainability
+   :check/level       :second-order
+   :check/severity    :advisory
+   :check/runner      :deterministic
+   :check/description "No file in `src/avatar/` exceeds 800 lines."
+   :check/command     "! find src/avatar -name '*.cljs' -exec awk 'END { if (NR > 800) exit 1 }' {} \\;"
+   :check/pass-when   {:exit-code 0}}
+
+  {:check/id          :few-runtime-dependencies
+   :check/concern     :maintainability
+   :check/level       :second-order
+   :check/severity    :advisory
+   :check/runner      :deterministic
+   :check/description "`shadow-cljs.edn` `:dependencies` vector has at most 8 entries."
+   :check/rationale   "Why: every dependency is a permanent surface area — build-time fragility, security exposure, learning curve for contributors. Pinning a small dependency count is a forcing function against accidental sprawl. For Clojure projects the dep list lives in shadow-cljs.edn or deps.edn (`:dependencies`), not package.json — a per-stack adaptation from the lccjs analogue. See docs/research/findings.md."
+   :check/command     "bb -e '(let [edn (clojure.edn/read-string (slurp \"shadow-cljs.edn\"))] (System/exit (if (<= (count (:dependencies edn)) 8) 0 1)))'"
+   :check/pass-when   {:exit-code 0}}
+
+  ;; ============================================================
+  ;; Testability — second-order
+  ;; ============================================================
+
+  {:check/id          :tests-not-empty
+   :check/concern     :testability
+   :check/level       :second-order
+   :check/severity    :required
+   :check/runner      :deterministic
+   :check/description "At least one `*_test.cljs` file exists under `test/`."
+   :check/command     "test $(find test -name '*_test.cljs' 2>/dev/null | wc -l) -ge 1"
+   :check/pass-when   {:exit-code 0}}
+
+  {:check/id          :no-commented-out-tests
+   :check/concern     :testability
+   :check/level       :second-order
+   :check/severity    :advisory
+   :check/runner      :deterministic
+   :check/description "No `#_(deftest ...)` reader-macro-commented tests in `test/`."
+   :check/command     "! grep -rEn '#_\\(deftest' test/ 2>/dev/null"
+   :check/pass-when   {:exit-code 0}}
+
+  ;; ============================================================
+  ;; Documentation / cross-cutting
+  ;; ============================================================
+
+  {:check/id          :readme-substantive
+   :check/concern     :delivery-safety
+   :check/level       :first-order
+   :check/severity    :advisory
+   :check/runner      :deterministic
+   :check/description "`README.md` exists and is at least 200 bytes (i.e. more than a title line)."
+   :check/rationale   "A README is the first thing anyone — a future contributor or a future-you — sees on arrival. A near-empty README isn't catastrophic, but the cost of writing 200+ bytes is trivial and the value scales with every onboarder. The 200-byte threshold is generous: it asks for a title, one sentence on what the project does, and one sentence on how to run it. Anything less is a red flag that orientation is missing."
+   :check/command     "test -f README.md && test $(wc -c < README.md) -ge 200"
+   :check/pass-when   {:exit-code 0}}]}
