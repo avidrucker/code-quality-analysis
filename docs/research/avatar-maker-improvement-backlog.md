@@ -8,7 +8,11 @@ Ordered by recommended priority: highest-value, smallest-effort first.
 
 ---
 
-## 1. `unit-tests-pass` (required, FAILED)
+## 1. `unit-tests-pass` (required, FAILED) — ✅ DONE 2026-05-27
+
+**Status note (2026-05-27).** Resolved. shadow-cljs is already in `devDependencies` (`^3.4.11`) and `node_modules/.bin/shadow-cljs` resolves correctly. The previous "shadow-cljs: not found" was because `node_modules` hadn't been installed in the assessment's subprocess at the time. After `npm install` ran, the check flipped to PASS. No further action needed unless the dev-dep gets removed.
+
+
 
 **What it measures.** `npm test` exits zero. The script in avatar-maker is `shadow-cljs compile test && node target/test.cjs`.
 
@@ -30,7 +34,11 @@ Ordered by recommended priority: highest-value, smallest-effort first.
 
 ---
 
-## 2. `readme-substantive` (advisory, FAILED)
+## 2. `readme-substantive` (advisory, FAILED) — ✅ DONE 2026-05-27
+
+**Status note (2026-05-27).** Resolved. README rewritten to ~4 KB with stack, requirements, setup, common tasks (with a real command table), project layout, and deployment sections. Well over the 200-byte threshold. (Still uncommitted as of writing — the rewrite is in your working tree.)
+
+
 
 **What it measures.** README.md exists and is ≥ 200 bytes.
 
@@ -50,7 +58,11 @@ Ordered by recommended priority: highest-value, smallest-effort first.
 
 ---
 
-## 3. `node-version-pinned` (advisory, FAILED)
+## 3. `node-version-pinned` (advisory, FAILED) — ✅ DONE 2026-05-27
+
+**Status note (2026-05-27).** Resolved in avatar-maker commit `59b0ea3`. Added `.nvmrc` with `24.16.0` and `engines.node` `>=20.0.0` in package.json (matches the floor documented in your new README). Local commit only, not pushed yet — pending your push decision.
+
+
 
 **What it measures.** `.nvmrc` OR `engines.node` in `package.json` exists.
 
@@ -117,10 +129,23 @@ Together that's 3195 lines in two files, vs ~952 lines across the other 7 source
 
 ## Summary of recommended applies (low effort, high value)
 
-If you spend an hour on the avatar-maker side:
+### Status as of 2026-05-27
 
-- [ ] **#1** — `npm install --save-dev shadow-cljs` + commit (~5 min). Flips exit code.
-- [ ] **#2** — Write a real README (~15 min).
-- [ ] **#3** — `.nvmrc` + `engines.node` (~5 min).
+| # | Action | Status |
+|---|---|---|
+| 1 | shadow-cljs in devDependencies | ✅ Already done (in committed state pre-assessment) |
+| 2 | Real README (≥ 200 bytes) | ✅ Done in working tree, awaiting your commit |
+| 3 | `.nvmrc` + `engines.node` | ✅ Done in commit `59b0ea3`, awaiting your push |
+| 4 | God-files refactor (`ui.cljs`, `render.cljs`) | ⬜ Deferred — needs a dedicated refactor session |
+| 5 | Deep-nesting cleanup | ⬜ Blocked on v2's clj-kondo dispatch (framework side) |
 
-After those three, re-run the assessment. Expected result: 13 PASS / 2 FAIL / 0 UNKNOWN, exit 0. The remaining two failures (#4 ui.cljs/render.cljs size, #5 deep nesting) are either deferred work or pending v2 framework improvements.
+**Latest scorecard:** 12 PASS / 3 FAIL / 0 UNKNOWN, **exit 0** (was 10/5/0, exit 1 before this round). The three remaining failures are all advisory — `no-uncommitted-changes` (flips when you commit your WIP), plus #4 and #5 above.
+
+### What's left
+
+After the cleanup above lands fully (your commits push), the avatar-maker scorecard's only unresolved items are:
+
+- **#4** — a real structural improvement to avatar-maker itself; do when you next touch the UI substantively.
+- **#5** — won't be cleanly actionable until the framework gains language-aware analyzer dispatch (T1-1 in [v2_backlog.md](../v2_backlog.md)).
+
+So: avatar-maker is essentially "done from the framework's perspective" until either (a) you decide to refactor the god-files or (b) the framework gains clj-kondo dispatch.
