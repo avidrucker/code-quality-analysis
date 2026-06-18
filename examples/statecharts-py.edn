@@ -1,0 +1,148 @@
+;; Code quality config for statecharts-py.
+;; Run from the code-quality-analysis directory:
+;;
+;;   ./assess.bb examples/statecharts-py.edn
+;;
+;; 12 checks across 6 concerns. Per-machine Claude knobs live in local.edn.
+
+{:project/name    "statecharts-py"
+ :project/path    "~/Documents/Study/Python/statecharts-py"
+ :project/profile :library
+ :reports/dir     "reports/statecharts-py"
+
+ :checks
+ [;; ============================================================
+  ;; Correctness — first-order
+  ;; ============================================================
+
+  {:check/id          :unit-tests-pass
+   :check/concern     :correctness
+   :check/level       :first-order
+   :check/severity    :required
+   :check/runner      :deterministic
+   :check/description "`python3 run_tests.py` exits zero (zero-dep fallback runner)."
+   :check/command     "python3 run_tests.py"
+   :check/pass-when   {:exit-code 0}}
+
+  {:check/id          :w3c-conformance-floor
+   :check/concern     :correctness
+   :check/level       :first-order
+   :check/severity    :required
+   :check/runner      :deterministic
+   :check/description "W3C SCXML conformance suite passes ≥150 tests."
+   :check/rationale   "Why: the project claims W3C SCXML semantics fidelity. The floor of 150 passing tests (out of 156 runnable, ~96%) is the regression guard for that claim. Dropping below it means a semantic regression shipped."
+   :check/command     "python3 tests/w3c/runner.py --min 150"
+   :check/pass-when   {:exit-code 0}}
+
+  {:check/id          :no-fixme-in-src
+   :check/concern     :correctness
+   :check/level       :first-order
+   :check/severity    :advisory
+   :check/runner      :deterministic
+   :check/description "No `FIXME` markers in `src/`."
+   :check/command     "! grep -rn 'FIXME' src/ 2>/dev/null"
+   :check/pass-when   {:exit-code 0}}
+
+  ;; ============================================================
+  ;; Performance — first-order
+  ;; ============================================================
+
+  {:check/id          :test-suite-time-bound
+   :check/concern     :performance
+   :check/level       :first-order
+   :check/severity    :advisory
+   :check/runner      :deterministic
+   :check/description "`python3 run_tests.py` completes within 60 seconds."
+   :check/command     "timeout 60 python3 run_tests.py"
+   :check/pass-when   {:exit-code 0}}
+
+  ;; ============================================================
+  ;; Delivery safety — first-order
+  ;; ============================================================
+
+  {:check/id          :python-version-pinned
+   :check/concern     :delivery-safety
+   :check/level       :first-order
+   :check/severity    :recommended
+   :check/runner      :deterministic
+   :check/description "`requires-python` is declared in `pyproject.toml`."
+   :check/rationale   "Why: without a floor, CI and dev environments may silently pick up an older Python that lacks features used in the code (e.g. match statements, structural pattern matching, tomllib). The cost it lowers is 'works on my machine' breakage from version skew."
+   :check/command     "grep -q 'requires-python' pyproject.toml"
+   :check/pass-when   {:exit-code 0}}
+
+  {:check/id          :ci-config-exists
+   :check/concern     :delivery-safety
+   :check/level       :first-order
+   :check/severity    :advisory
+   :check/runner      :deterministic
+   :check/description "A CI workflow config exists under `.github/workflows/`."
+   :check/command     "test -d .github/workflows && ls .github/workflows/*.yml 2>/dev/null | grep -q ."
+   :check/pass-when   {:exit-code 0}}
+
+  {:check/id          :no-uncommitted-changes
+   :check/concern     :delivery-safety
+   :check/level       :first-order
+   :check/severity    :advisory
+   :check/runner      :deterministic
+   :check/description "Working tree is clean (no uncommitted changes vs HEAD)."
+   :check/command     "git diff --quiet HEAD"
+   :check/pass-when   {:exit-code 0}}
+
+  ;; ============================================================
+  ;; Readability — second-order
+  ;; ============================================================
+
+  {:check/id          :no-deep-nesting-in-src
+   :check/concern     :readability
+   :check/level       :second-order
+   :check/severity    :advisory
+   :check/runner      :deterministic
+   :check/description "No lines in `src/` indented 20+ spaces (≈5+ levels at 4-space indent)."
+   :check/command     "! grep -rE '^( {20,})[^ ]' src/ 2>/dev/null"
+   :check/pass-when   {:exit-code 0}}
+
+  ;; ============================================================
+  ;; Maintainability — second-order
+  ;; ============================================================
+
+  {:check/id          :algorithm-size-bound
+   :check/concern     :maintainability
+   :check/level       :second-order
+   :check/severity    :advisory
+   :check/runner      :deterministic
+   :check/description "`src/statecharts/algorithm.py` (core SCXML algorithm) is under 800 lines."
+   :check/command     "awk 'END { exit (NR <= 800 ? 0 : 1) }' src/statecharts/algorithm.py"
+   :check/pass-when   {:exit-code 0}}
+
+  {:check/id          :no-runtime-dependencies
+   :check/concern     :maintainability
+   :check/level       :second-order
+   :check/severity    :recommended
+   :check/runner      :deterministic
+   :check/description "Zero runtime dependencies declared in `pyproject.toml`."
+   :check/rationale   "Why: statecharts-py deliberately ships with `dependencies = []` — the library is embeddable anywhere without pulling in third-party packages. A new dep would be a breaking change to that zero-dep contract and should be a deliberate, discussed decision."
+   :check/command     "grep -qF 'dependencies = []' pyproject.toml"
+   :check/pass-when   {:exit-code 0}}
+
+  ;; ============================================================
+  ;; Testability — second-order
+  ;; ============================================================
+
+  {:check/id          :no-skipped-tests
+   :check/concern     :testability
+   :check/level       :second-order
+   :check/severity    :recommended
+   :check/runner      :deterministic
+   :check/description "No `@pytest.mark.skip`, `xfail`, or `@unittest.skip` in test files."
+   :check/rationale   "Why: a skipped test contributes 0 to confidence and 100% to the coverage illusion. The cost it adds is the gap between 'tests pass' and 'tests verify what they claim to.'"
+   :check/command     "! grep -rEn '@pytest\\.mark\\.skip|pytest\\.mark\\.xfail|@unittest\\.skip' tests/ 2>/dev/null"
+   :check/pass-when   {:exit-code 0}}
+
+  {:check/id          :tests-not-empty
+   :check/concern     :testability
+   :check/level       :second-order
+   :check/severity    :advisory
+   :check/runner      :deterministic
+   :check/description "At least 10 `test_*.py` files exist directly under `tests/`."
+   :check/command     "test $(find tests -maxdepth 1 -name 'test_*.py' 2>/dev/null | wc -l) -ge 10"
+   :check/pass-when   {:exit-code 0}}]}

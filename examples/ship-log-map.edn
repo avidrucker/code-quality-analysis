@@ -1,0 +1,187 @@
+;; Assessment config for the ship-log-map React/Vite project.
+;; Run from the code-quality-analysis directory:
+;;
+;;   ./assess.bb examples/ship-log-map.edn
+;;
+;; 15 checks across 6 concerns. Per-machine Claude knobs live in local.edn.
+
+{:project/name    "ship-log-map"
+ :project/path    "~/Documents/Study/ReactJS/ship-log-map"
+ :project/profile :web-app
+ :reports/dir     "reports/ship-log-map"
+
+ :checks
+ [;; ============================================================
+  ;; Correctness — first-order
+  ;; ============================================================
+
+  {:check/id          :unit-tests-pass
+   :check/concern     :correctness
+   :check/level       :first-order
+   :check/severity    :required
+   :check/runner      :deterministic
+   :check/description "`npm test` exits zero."
+   :check/command     "npm test"
+   :check/pass-when   {:exit-code 0}}
+
+  {:check/id          :no-fixme-in-src
+   :check/concern     :correctness
+   :check/level       :first-order
+   :check/severity    :advisory
+   :check/runner      :deterministic
+   :check/description "No `FIXME` markers in `src/`."
+   :check/command     "! grep -rn 'FIXME' src/ 2>/dev/null"
+   :check/pass-when   {:exit-code 0}}
+
+  {:check/id          :no-todo-in-src
+   :check/concern     :correctness
+   :check/level       :first-order
+   :check/severity    :advisory
+   :check/runner      :deterministic
+   :check/description "No `TODO` markers in `src/`."
+   :check/command     "! grep -rEn 'TODO' src/ 2>/dev/null"
+   :check/pass-when   {:exit-code 0}}
+
+  ;; ============================================================
+  ;; Performance — first-order
+  ;; ============================================================
+
+  {:check/id          :test-suite-time-bound
+   :check/concern     :performance
+   :check/level       :first-order
+   :check/severity    :advisory
+   :check/runner      :deterministic
+   :check/description "`npm test` completes within 60 seconds."
+   :check/command     "timeout 60 npm test"
+   :check/pass-when   {:exit-code 0}}
+
+  ;; ============================================================
+  ;; Delivery safety — first-order
+  ;; ============================================================
+
+  {:check/id          :lockfile-present
+   :check/concern     :delivery-safety
+   :check/level       :first-order
+   :check/severity    :recommended
+   :check/runner      :deterministic
+   :check/description "`package-lock.json` exists at the project root."
+   :check/command     "test -f package-lock.json"
+   :check/pass-when   {:exit-code 0}}
+
+  {:check/id          :ci-workflow-present
+   :check/concern     :delivery-safety
+   :check/level       :first-order
+   :check/severity    :recommended
+   :check/runner      :deterministic
+   :check/description "`.github/workflows/` has at least one workflow file."
+   :check/command     "test -d .github/workflows && test \"$(ls .github/workflows 2>/dev/null | wc -l)\" -gt 0"
+   :check/pass-when   {:exit-code 0}}
+
+  {:check/id          :no-uncommitted-changes
+   :check/concern     :delivery-safety
+   :check/level       :first-order
+   :check/severity    :advisory
+   :check/runner      :deterministic
+   :check/description "Working tree is clean (no uncommitted changes vs HEAD)."
+   :check/command     "git diff --quiet HEAD"
+   :check/pass-when   {:exit-code 0}}
+
+  {:check/id          :node-version-pinned
+   :check/concern     :delivery-safety
+   :check/level       :first-order
+   :check/severity    :advisory
+   :check/runner      :deterministic
+   :check/description "Node version is pinned via `.nvmrc` or `engines.node` in package.json."
+   :check/rationale   "Why: silent breakage from Node version skew between dev laptop and CI is a common 'works on my machine' failure mode. ship-log-map has a GitHub Actions deploy workflow (.github/workflows/deploy.yml), so a version pin would actually protect that pipeline. The cost of adding a .nvmrc (one line) is trivial; the cost of diagnosing a silent build failure from version skew is not."
+   :check/command     "test -f .nvmrc || node -e 'process.exit(require(\"./package.json\").engines && require(\"./package.json\").engines.node ? 0 : 1)'"
+   :check/pass-when   {:exit-code 0}}
+
+  ;; ============================================================
+  ;; Idiomaticity — second-order
+  ;; ============================================================
+
+  {:check/id          :lint-passes
+   :check/concern     :idiomaticity
+   :check/level       :second-order
+   :check/severity    :recommended
+   :check/runner      :deterministic
+   :check/description "`npm run lint` exits zero (ESLint with react-hooks + react-refresh plugins)."
+   :check/command     "npm run lint"
+   :check/pass-when   {:exit-code 0}}
+
+  ;; ============================================================
+  ;; Readability — second-order
+  ;; ============================================================
+
+  {:check/id          :no-deep-nesting-in-src
+   :check/concern     :readability
+   :check/level       :second-order
+   :check/severity    :advisory
+   :check/runner      :deterministic
+   :check/description "No lines in `src/` indented 20+ spaces (≈5+ levels at 4-space indent), excluding JSX return blocks."
+   :check/command     "! grep -rE '^( {20,})[^ ]' src/ --include='*.js' --include='*.jsx' 2>/dev/null"
+   :check/pass-when   {:exit-code 0}}
+
+  {:check/id          :no-banned-vague-fn-names
+   :check/concern     :readability
+   :check/level       :second-order
+   :check/severity    :advisory
+   :check/runner      :deterministic
+   :check/description "No functions or arrows named with vague terms (data, info, thing, stuff) as standalone identifiers in `src/`."
+   :check/command     "! grep -rEn 'function (data|info|thing|stuff)\\(|const (data|info|thing|stuff) =' src/ --include='*.js' --include='*.jsx' 2>/dev/null"
+   :check/pass-when   {:exit-code 0}}
+
+  ;; ============================================================
+  ;; Maintainability — second-order
+  ;; ============================================================
+
+  {:check/id          :app-jsx-size-bound
+   :check/concern     :maintainability
+   :check/level       :second-order
+   :check/severity    :advisory
+   :check/runner      :deterministic
+   :check/description "`src/App.jsx` is under 1200 lines (currently ~1598 — a signal to split)."
+   :check/rationale   "Why: a 1600-line top-level component is the same problem as a 1600-line function — it's doing too many things, and every reader has to hold too much in their head. The cost of overgrown components is slower onboarding, harder reviews, and higher probability of accidental coupling. 1200 lines is generous; the value of splitting is concrete when it makes the component explainable as a single responsibility."
+   :check/command     "awk 'END { exit (NR < 1200 ? 0 : 1) }' src/App.jsx"
+   :check/pass-when   {:exit-code 0}}
+
+  {:check/id          :few-runtime-dependencies
+   :check/concern     :maintainability
+   :check/level       :second-order
+   :check/severity    :advisory
+   :check/runner      :deterministic
+   :check/description "Runtime dependency count is ≤ 6 (currently 4: cytoscape, react, react-dom, tachyons)."
+   :check/command     "node -e 'process.exit(Object.keys(require(\"./package.json\").dependencies || {}).length <= 6 ? 0 : 1)'"
+   :check/pass-when   {:exit-code 0}}
+
+  ;; ============================================================
+  ;; Testability — second-order
+  ;; ============================================================
+
+  {:check/id          :no-test-only
+   :check/concern     :testability
+   :check/level       :second-order
+   :check/severity    :required
+   :check/runner      :deterministic
+   :check/description "No `.only(` calls left in test files (prevents CI from silently running a single test)."
+   :check/command     "! grep -rn --include='*.test.js' --include='*.test.jsx' '\\.only(' src/ e2e/ 2>/dev/null"
+   :check/pass-when   {:exit-code 0}}
+
+  {:check/id          :no-skipped-tests
+   :check/concern     :testability
+   :check/level       :second-order
+   :check/severity    :recommended
+   :check/runner      :deterministic
+   :check/description "No `.skip(`, `xit(`, or `xdescribe(` in test files."
+   :check/rationale   "Why: a skipped test contributes 0 to confidence and 100% to the coverage illusion. The cost is the gap between 'tests pass' and 'tests verify what they claim to.'"
+   :check/command     "! grep -rEn --include='*.test.js' --include='*.test.jsx' '\\.skip\\(|\\bxit\\(|\\bxdescribe\\(' src/ e2e/ 2>/dev/null"
+   :check/pass-when   {:exit-code 0}}
+
+  {:check/id          :tests-not-empty
+   :check/concern     :testability
+   :check/level       :second-order
+   :check/severity    :recommended
+   :check/runner      :deterministic
+   :check/description "At least 8 `*.test.js` files exist under `src/` (currently 13)."
+   :check/command     "test $(find src -name '*.test.js' 2>/dev/null | wc -l) -ge 8"
+   :check/pass-when   {:exit-code 0}}]}

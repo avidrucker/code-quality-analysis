@@ -1,0 +1,146 @@
+;; Code-quality config for fulcro-book ("awesome" rebuild).
+;; Full-stack Clojure/CLJS web app: Fulcro + Pathom + Datomic Local on the
+;; server; shadow-cljs CLJS bundle for GitHub Pages frontend.
+;;
+;; Run from the code-quality-analysis directory:
+;;
+;;   ./assess.bb examples/fulcro-book.edn
+;;
+;; NOTE: the :tests-pass check boots the full JVM suite
+;; (fulcro-spec unit + fulcro-headless E2E). It does NOT bind :3000 —
+;; headless E2E fixtures use ports in the 31xx range. Safe to run while
+;; the dev server is up.
+
+{:project/name    "fulcro-book"
+ :project/path    "~/Documents/Study/Fulcro/fulcro-book"
+ :project/profile :web-app
+ :reports/dir     "reports/fulcro-book"
+
+ :checks
+ [;; ============================================================
+  ;; Correctness — first-order
+  ;; ============================================================
+
+  {:check/id          :tests-pass
+   :check/concern     :correctness
+   :check/level       :first-order
+   :check/severity    :required
+   :check/runner      :deterministic
+   :check/description "Full JVM suite (`clojure -M:server:cljs:test`) exits zero within 3 min."
+   :check/command     "timeout 180 clojure -M:server:cljs:test"
+   :check/pass-when   {:exit-code 0}}
+
+  {:check/id          :no-fixme-in-src
+   :check/concern     :correctness
+   :check/level       :first-order
+   :check/severity    :advisory
+   :check/runner      :deterministic
+   :check/description "No `FIXME` markers in `src/main/`."
+   :check/command     "! grep -rn 'FIXME' src/main/ 2>/dev/null"
+   :check/pass-when   {:exit-code 0}}
+
+  {:check/id          :no-behavior-macro-in-tests
+   :check/concern     :correctness
+   :check/level       :first-order
+   :check/severity    :required
+   :check/runner      :deterministic
+   :check/description "No `(behavior ` macro calls in test files (banned; use `assertions` blocks)."
+   :check/rationale   "The `behavior` macro from fulcro-spec is banned in this project because it encourages single-assertion behavior blocks and produces noisy output. All test grouping must use multi-triple `assertions` blocks instead. This is a red-green TDD discipline rule — not just style."
+   :check/command     "! grep -rEn '^\\s*\\(behavior\\s' src/test/ 2>/dev/null"
+   :check/pass-when   {:exit-code 0}}
+
+  {:check/id          :ci-tests-configured
+   :check/concern     :correctness
+   :check/level       :first-order
+   :check/severity    :recommended
+   :check/runner      :deterministic
+   :check/description "CI JVM-test workflow exists (`.github/workflows/clj-test.yml`)."
+   :check/command     "test -f .github/workflows/clj-test.yml"
+   :check/pass-when   {:exit-code 0}}
+
+  {:check/id          :guardrails-test-config-present
+   :check/concern     :correctness
+   :check/level       :first-order
+   :check/severity    :recommended
+   :check/runner      :deterministic
+   :check/description "`guardrails-test.edn` exists (enables Guardrails `:all` mode in the test alias)."
+   :check/rationale   "The `:test` alias in `deps.edn` passes `-Dguardrails.config=guardrails-test.edn`. If this file is missing, the JVM test run silently skips contract enforcement — specs declared with `>defn` are unenforced and spec violations go undetected."
+   :check/command     "test -f guardrails-test.edn"
+   :check/pass-when   {:exit-code 0}}
+
+  ;; ============================================================
+  ;; Delivery safety — first-order
+  ;; ============================================================
+
+  {:check/id          :no-uncommitted-changes
+   :check/concern     :delivery-safety
+   :check/level       :first-order
+   :check/severity    :advisory
+   :check/runner      :deterministic
+   :check/description "Working tree is clean (no uncommitted changes vs HEAD)."
+   :check/command     "git diff --quiet HEAD"
+   :check/pass-when   {:exit-code 0}}
+
+  {:check/id          :secret-scan-ci-configured
+   :check/concern     :delivery-safety
+   :check/level       :first-order
+   :check/severity    :recommended
+   :check/runner      :deterministic
+   :check/description "Gitleaks secret-scan CI workflow exists (`.github/workflows/gitleaks.yml`)."
+   :check/command     "test -f .github/workflows/gitleaks.yml"
+   :check/pass-when   {:exit-code 0}}
+
+  {:check/id          :test-reset-not-in-prod
+   :check/concern     :delivery-safety
+   :check/level       :first-order
+   :check/severity    :required
+   :check/runner      :deterministic
+   :check/description "`allow-test-reset` appears in `deps.edn` exactly once (`:dev` alias only, never `:prod`)."
+   :check/rationale   "The `POST /test-reset` endpoint wipes and reseeds the entire Datomic database. It is gated by the `-Dawesome.allow-test-reset=true` JVM property. If this property leaks into the `:prod` alias, any HTTP caller can destroy production data. Exactly one occurrence means it's only in `:dev`."
+   :check/command     "test $(grep -c '\"-Dawesome.allow-test-reset=true\"' deps.edn) -eq 1"
+   :check/pass-when   {:exit-code 0}}
+
+  ;; ============================================================
+  ;; Testability — first-order
+  ;; ============================================================
+
+  {:check/id          :headless-e2e-coverage
+   :check/concern     :testability
+   :check/level       :first-order
+   :check/severity    :recommended
+   :check/runner      :deterministic
+   :check/description "At least 10 `headless_e2e_*.clj` test files exist under `src/test/`."
+   :check/command     "test $(find src/test -name 'headless_e2e_*.clj' | wc -l) -ge 10"
+   :check/pass-when   {:exit-code 0}}
+
+  {:check/id          :all-layers-have-tests
+   :check/concern     :testability
+   :check/level       :first-order
+   :check/severity    :recommended
+   :check/runner      :deterministic
+   :check/description "All four main layers (mutations, resolvers, model_rad, server) have test subdirectories."
+   :check/command     "test -d src/test/awesome/mutations && test -d src/test/awesome/resolvers && test -d src/test/awesome/model_rad && test -d src/test/awesome/server"
+   :check/pass-when   {:exit-code 0}}
+
+  ;; ============================================================
+  ;; Maintainability — second-order
+  ;; ============================================================
+
+  {:check/id          :auth-page-size-bound
+   :check/concern     :maintainability
+   :check/level       :second-order
+   :check/severity    :advisory
+   :check/runner      :deterministic
+   :check/description "`client/auth/page.cljc` is under 600 lines (was ~650 pre-refactor; currently ~428)."
+   :check/rationale   "AuthPage was the target of a dedicated decomplect refactor in Phase 12 (docs/research/decomplection-analysis-2026-05-28.md). Keeping a size bound here makes a future re-braiding visible before it becomes entrenched."
+   :check/command     "awk 'END { exit (NR <= 600 ? 0 : 1) }' src/main/awesome/client/auth/page.cljc"
+   :check/pass-when   {:exit-code 0}}
+
+  {:check/id          :no-deep-nesting-in-src
+   :check/concern     :maintainability
+   :check/level       :second-order
+   :check/severity    :advisory
+   :check/runner      :deterministic
+   :check/description "No lines in `src/main/` indented 20+ spaces (≈10+ nesting levels at 2-space Clojure indent)."
+   :check/command     "! grep -rE '^( {20,})[^ ]' src/main/ 2>/dev/null"
+   :check/pass-when   {:exit-code 0}}]}

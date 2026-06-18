@@ -1,0 +1,135 @@
+;; Code-quality config for anki-card-test-1.
+;; A React/Vite teaching demo — no test suite, single dominant component.
+;; Run from the code-quality-analysis directory:
+;;
+;;   ./assess.bb examples/anki-card-test-1.edn
+
+{:project/name    "anki-card-test-1"
+ :project/path    "~/Documents/Study/ReactJS/anki-card-test-1"
+ :project/profile :teaching-demo
+ :reports/dir     "reports/anki-card-test-1"
+
+ :checks
+ [;; ============================================================
+  ;; Correctness — first-order
+  ;; ============================================================
+
+  {:check/id          :eslint-passes
+   :check/concern     :correctness
+   :check/level       :first-order
+   :check/severity    :required
+   :check/runner      :deterministic
+   :check/description "`npm run lint` exits zero (ESLint with react/react-hooks plugins)."
+   :check/command     "npm run lint"
+   :check/pass-when   {:exit-code 0}}
+
+  {:check/id          :build-passes
+   :check/concern     :correctness
+   :check/level       :first-order
+   :check/severity    :recommended
+   :check/runner      :deterministic
+   :check/description "`npm run build` completes without error."
+   :check/command     "npm run build"
+   :check/pass-when   {:exit-code 0}}
+
+  {:check/id          :no-fixme-in-src
+   :check/concern     :correctness
+   :check/level       :first-order
+   :check/severity    :advisory
+   :check/runner      :deterministic
+   :check/description "No `FIXME` markers in `src/`."
+   :check/command     "! grep -rn 'FIXME' src/ 2>/dev/null"
+   :check/pass-when   {:exit-code 0}}
+
+  {:check/id          :no-todo-in-src
+   :check/concern     :correctness
+   :check/level       :first-order
+   :check/severity    :advisory
+   :check/runner      :deterministic
+   :check/description "No `TODO` markers in `src/`."
+   :check/command     "! grep -rEn 'TODO' src/ 2>/dev/null"
+   :check/pass-when   {:exit-code 0}}
+
+  {:check/id          :test-script-exists
+   :check/concern     :correctness
+   :check/level       :first-order
+   :check/severity    :advisory
+   :check/runner      :deterministic
+   :check/description "A `test` script is defined in package.json (some test infrastructure exists)."
+   :check/command     "node -e \"process.exit(require('./package.json').scripts && require('./package.json').scripts.test ? 0 : 1)\""
+   :check/pass-when   {:exit-code 0}}
+
+  ;; ============================================================
+  ;; Delivery safety — first-order
+  ;; ============================================================
+
+  {:check/id          :lockfile-present
+   :check/concern     :delivery-safety
+   :check/level       :first-order
+   :check/severity    :recommended
+   :check/runner      :deterministic
+   :check/description "`package-lock.json` exists at the project root."
+   :check/command     "test -f package-lock.json"
+   :check/pass-when   {:exit-code 0}}
+
+  {:check/id          :no-uncommitted-changes
+   :check/concern     :delivery-safety
+   :check/level       :first-order
+   :check/severity    :advisory
+   :check/runner      :deterministic
+   :check/description "Working tree is clean (no uncommitted changes vs HEAD)."
+   :check/command     "git diff --quiet HEAD"
+   :check/pass-when   {:exit-code 0}}
+
+  {:check/id          :node-version-pinned
+   :check/concern     :delivery-safety
+   :check/level       :first-order
+   :check/severity    :advisory
+   :check/runner      :deterministic
+   :check/description "Node version pinned via `.nvmrc` or `engines.node` in package.json."
+   :check/command     "test -f .nvmrc || node -e 'process.exit(require(\"./package.json\").engines && require(\"./package.json\").engines.node ? 0 : 1)'"
+   :check/pass-when   {:exit-code 0}}
+
+  ;; ============================================================
+  ;; Readability — second-order
+  ;; ============================================================
+
+  {:check/id          :no-deep-nesting-in-src
+   :check/concern     :readability
+   :check/level       :second-order
+   :check/severity    :advisory
+   :check/runner      :deterministic
+   :check/description "No lines in `src/` indented 20+ spaces (≈5+ levels at 4-space indent)."
+   :check/command     "! grep -rE '^( {20,})[^ ]' src/ 2>/dev/null"
+   :check/pass-when   {:exit-code 0}}
+
+  {:check/id          :no-banned-vague-fn-names
+   :check/concern     :readability
+   :check/level       :second-order
+   :check/severity    :advisory
+   :check/runner      :deterministic
+   :check/description "No arrow-function vars with vague names (data, info, thing, stuff, handle, process) in `src/`."
+   :check/command     "! grep -rEn 'const (data|info|thing|stuff|handle|process) =' src/ 2>/dev/null"
+   :check/pass-when   {:exit-code 0}}
+
+  ;; ============================================================
+  ;; Maintainability — second-order
+  ;; ============================================================
+
+  {:check/id          :app-jsx-size-bound
+   :check/concern     :maintainability
+   :check/level       :second-order
+   :check/severity    :advisory
+   :check/runner      :deterministic
+   :check/description "`src/App.jsx` is under 1000 lines (currently ~807)."
+   :check/command     "awk 'END { exit (NR <= 1000 ? 0 : 1) }' src/App.jsx"
+   :check/pass-when   {:exit-code 0}}
+
+  {:check/id          :runtime-dep-count
+   :check/concern     :maintainability
+   :check/level       :second-order
+   :check/severity    :advisory
+   :check/runner      :deterministic
+   :check/description "Runtime dependency count is ≤ 12."
+   :check/command     "node -e 'process.exit(Object.keys(require(\"./package.json\").dependencies || {}).length <= 12 ? 0 : 1)'"
+   :check/pass-when   {:exit-code 0}}]}
